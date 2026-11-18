@@ -1,0 +1,50 @@
+name: Sync upstream
+
+# 每天 UTC 00:00（北京时间 08:00）把上游 feiniaoyun/feiniaoyun 的变更同步到本仓库 main。
+# GitHub 定时任务只认 UTC 时间，且实际触发可能比设定时间晚几分钟到半小时。
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync from upstream
+        run: |
+          set -euo pipefail
+
+          git remote add upstream https://github.com/feiniaoyun/feiniaoyun.git
+          git fetch upstream main
+
+          BEHIND="$(git rev-list --count main..upstream/main)"
+          AHEAD="$(git rev-list --count upstream/main..main)"
+          echo "fork ahead=${AHEAD} behind=${BEHIND}"
+
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "已与上游一致，无需同步"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # fork 无本地提交时直接 fast-forward；
+          # 若以后在 fork 上加了自有提交，merge 会自动保留它们（冲突时该次运行报错并邮件通知）
+          git merge --no-edit upstream/main
+
+          git push origin main
